@@ -22,6 +22,9 @@ export default function RootLayout({
             </a>
 
             <nav className="flex items-center gap-4 text-sm text-gray-600">
+              <a className="hover:text-gray-900" href="/about">
+                About
+              </a>
               <a className="hover:text-gray-900" href="/">
                 首頁
               </a>
