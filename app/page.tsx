@@ -1,6 +1,7 @@
-"use client";
-
+import Link from "next/link";
+import BackButton from "./components/BackButton";
 import { getAllNotes } from "@/lib/notes";
+import { getLatestDaily } from "@/lib/daily";
 
 const HIGH_WEIGHT = 0.8;
 
@@ -26,11 +27,11 @@ function WeightBadge({ w }: { w?: number }) {
   );
 }
 
-export default function NotesPage() {
-  // 1) 取資料
+export default function HomePage() {
+  // ✅ 這裡是 Server Component：可以安全讀檔
   const notes = getAllNotes();
+  const latestDaily = getLatestDaily();
 
-  // 2) 研究排序：weight DESC → date DESC
   const sorted = [...notes].sort((a, b) => {
     const wa = a.weight ?? -Infinity;
     const wb = b.weight ?? -Infinity;
@@ -38,23 +39,36 @@ export default function NotesPage() {
     return a.date < b.date ? 1 : -1;
   });
 
-  // 3) 高權重視圖
   const highPriority = sorted.filter((n) => (n.weight ?? 0) >= HIGH_WEIGHT);
 
   return (
     <main className="space-y-10">
       {/* Navigation helpers */}
       <div className="flex items-center gap-4 text-sm text-gray-600">
-        <button
-          onClick={() => window.history.back()}
-          className="hover:text-gray-900"
-        >
-          ← 上一頁
-        </button>
+        <BackButton />
         <a href="/" className="hover:text-gray-900">
           回首頁
         </a>
       </div>
+
+      {/* ✅ 今日事件雷達（首頁卡片） */}
+      {latestDaily && (
+        <section className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+          <div className="text-sm text-gray-600">🛰️ 今日事件雷達</div>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">{latestDaily.title}</h2>
+              <div className="mt-1 text-sm text-gray-500">{latestDaily.date}</div>
+            </div>
+            <Link
+              href={`/daily/${latestDaily.slug}`}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+            >
+              查看完整事件雷達 →
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* 高權重事件（第一視角） */}
       <section className="space-y-4">

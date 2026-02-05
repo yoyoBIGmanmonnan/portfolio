@@ -31,6 +31,9 @@ export default function RootLayout({
               <a className="hover:text-gray-900" href="/notes">
                 Notes
               </a>
+              <a className="hover:text-gray-900" href="/daily">
+                事件雷達
+              </a>
             </nav>
           </div>
         </header>
@@ -45,6 +48,6 @@ export default function RootLayout({
           </div>
         </footer>
       </body>
-    </html>
+    </html >
   );
 }
