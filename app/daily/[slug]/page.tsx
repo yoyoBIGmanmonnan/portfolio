@@ -32,7 +32,7 @@ function stripTags(s: string) {
     return s.replace(/<[^>]+>/g, "").trim();
 }
 
-// 公司要從「原始 ul」抽（清理後你會把公司 li 刪掉）
+// 公司要從「原始 ul」抽，不要抽清理後的（你會把公司 li 刪掉）
 function extractCompany(ulHtml: string) {
     const m = ulHtml.match(/<li[^>]*>\s*公司\s*[:：]\s*([^<]+?)\s*<\/li>/);
     return m ? m[1].trim() : undefined;
@@ -43,31 +43,41 @@ function extractHeat(ulHtml: string) {
     return m ? Number(m[1]) : undefined;
 }
 
-function foldNewsInsideUl(ulHtml: string) {
-    // 兼容兩種格式：
-    // A) <li>代表新聞：<ul>...</ul></li>
-    // B) <li>代表新聞：</li> 後面連續很多 <li> 都是新聞來源
+function removeTopicLi(ulHtml: string) {
+    return ulHtml.replace(/<li[^>]*>\s*主題\s*[:：][\s\S]*?<\/li>/g, "");
+}
 
+// 公司卡內的子事件不需要「公司：xxx」這行，避免重複
+function removeCompanyLi(ulHtml: string) {
+    return ulHtml.replace(/<li[^>]*>\s*公司\s*[:：][\s\S]*?<\/li>/g, "");
+}
+
+/**
+ * 把「代表新聞」折疊進 <details>
+ * 支援兩種：
+ * A) <li>代表新聞：<ul>...</ul></li>
+ * B) <li>代表新聞：</li> 後面連續很多 <li> 都是新聞來源
+ */
+function foldNewsInsideUl(ulHtml: string) {
     const lis = ulHtml.match(/<li[\s\S]*?<\/li>/g) || [];
-    if (lis.length === 0) return ulHtml;
+    if (!lis.length) return ulHtml;
 
     const idx = lis.findIndex((li) => /代表新聞\s*[:：]?/.test(li));
     if (idx === -1) return ulHtml;
 
-    // A) <li>代表新聞：<ul ...>...</ul></li>
+    // A
     const nested = lis[idx].match(
-        /<li[^>]*>\s*代表新聞\s*[:：]?\s*<ul[^>]*>([\s\S]*?)<\/ul>\s*<\/li>/
+        /<li[^>]*>\s*代表新聞[:：]?\s*<ul([\s\S]*?)<\/ul>\s*<\/li>/
     );
-
     if (nested) {
-        const innerLisHtml = nested[1]; // ul 裡面的內容（li...li）
-        const count = (innerLisHtml.match(/<li[\s\S]*?<\/li>/g) || []).length;
+        const innerAttrsAndLis = nested[1]; // 注意：這裡是 "<li>..." 以及可能的屬性
+        const count = (innerAttrsAndLis.match(/<li[\s\S]*?<\/li>/g) || []).length;
 
         const folded = `
 <li>
   <details>
     <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
-    <ul>${innerLisHtml}</ul>
+    <ul${innerAttrsAndLis}</ul>
   </details>
 </li>
 `.replace(/\n\s+/g, "");
@@ -77,7 +87,8 @@ function foldNewsInsideUl(ulHtml: string) {
         return `<ul>${newLis.join("")}</ul>`;
     }
 
-    // B) <li>代表新聞：</li> 後面很多 <li> 都是新聞
+    // B
+    const kept = lis.slice(0, idx);
     const newsLis = lis.slice(idx + 1);
     const count = newsLis.length;
 
@@ -90,17 +101,7 @@ function foldNewsInsideUl(ulHtml: string) {
 </li>
 `.replace(/\n\s+/g, "");
 
-    // 用折疊取代「代表新聞：」那行 + 後面的來源 li
-    return `<ul>${lis.slice(0, idx).join("")}${folded}</ul>`;
-}
-
-function removeTopicLi(ulHtml: string) {
-    return ulHtml.replace(/<li[^>]*>\s*主題\s*[:：][\s\S]*?<\/li>/g, "");
-}
-
-// 公司卡內的子事件不需要「公司：xxx」這行，避免重複
-function removeCompanyLi(ulHtml: string) {
-    return ulHtml.replace(/<li[^>]*>\s*公司\s*[:：][\s\S]*?<\/li>/g, "");
+    return `<ul>${kept.join("")}${folded}</ul>`;
 }
 
 /* =========================
@@ -144,7 +145,7 @@ function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
     const rows: HeatRow[] = [];
     for (const tr of dataTrs) {
         const cells = extractCellTexts(tr);
-        if (cells.length === 0) continue;
+        if (!cells.length) continue;
 
         const company = (cells[cIdx] || "").trim();
         const heatNum = Number(String(cells[hIdx] || "").replace(/[^\d.]/g, ""));
@@ -247,7 +248,7 @@ function rebuildCompanyHeatSection(sectionHtml: string) {
         parseCompanyHeatFromList(sectionHtml) ??
         [];
 
-    if (rows.length === 0) return null;
+    if (!rows.length) return null;
 
     const sorted = [...rows].sort((a, b) => b.heat - a.heat);
 
@@ -302,16 +303,107 @@ ${title}
 }
 
 /* =========================
+   EventRadarPlus (pure text) parser
+========================= */
+
+function escapeHtml(s: string) {
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+/**
+ * 你目前「純文字」長這樣：
+ * 事件排行（EventRadarPlus）
+ * 1) 規格+
+ * 極性：正向
+ * 主題：...
+ * 公司：台積電
+ * 熱度：65.05（Δ0）｜篇數：3｜高信心：1
+ * 命中詞：...
+ * 代表新聞：
+ * xxxx ...
+ *
+ * 這邊我們用「1)」切塊，並抓公司/熱度
+ */
+function parseEventsFromPureText(sectionHtml: string): EventItem[] {
+    const textBlock = sectionHtml
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
+        .replace(/<\/div>\s*<div[^>]*>/gi, "\n");
+
+    const text = stripTags(textBlock).replace(/\r/g, "").replace(/\u00a0/g, " ").trim();
+    const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+    const isStart = (l: string) => /^\d+\)\s*/.test(l);
+
+    const blocks: string[][] = [];
+    let cur: string[] = [];
+    for (const l of lines) {
+        if (isStart(l)) {
+            if (cur.length) blocks.push(cur);
+            cur = [l];
+        } else {
+            if (cur.length) cur.push(l);
+        }
+    }
+    if (cur.length) blocks.push(cur);
+
+    const events: EventItem[] = [];
+    for (const b of blocks) {
+        const first = b[0] || "";
+        const titleRaw = first.replace(/^\d+\)\s*/, "").trim();
+
+        const joined = b.join("\n");
+        const mC = joined.match(/公司\s*[:：]\s*([^\n｜|]+)\s*/);
+        const company = mC ? mC[1].trim() : undefined;
+
+        const mH = joined.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
+        const heat = mH ? Number(mH[1]) : undefined;
+
+        // 代表新聞折疊：找到 "代表新聞" 後面的行當來源
+        const idxNews = b.findIndex((l) => /^代表新聞\s*[:：]?\s*$/.test(l) || /^代表新聞\s*[:：]/.test(l));
+        let pre = b;
+        let news: string[] = [];
+        if (idxNews !== -1) {
+            pre = b.slice(0, idxNews + 1);
+            news = b.slice(idxNews + 1);
+        }
+
+        const liMain = pre.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+        const liNews = news.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+        const folded =
+            news.length > 0
+                ? `<li><details><summary style="cursor:pointer; opacity:0.8;">查看來源（${news.length}）</summary><ul>${liNews}</ul></details></li>`
+                : "";
+
+        let ulHtml = `<ul>${liMain}${folded}</ul>`;
+
+        // 跟卡片版一致：移除主題、移除公司行（公司會在卡片標題顯示）
+        ulHtml = removeTopicLi(ulHtml);
+        ulHtml = removeCompanyLi(ulHtml);
+
+        events.push({ title: titleRaw, ulHtml, company, heat });
+    }
+
+    return events;
+}
+
+/* =========================
    Main transformer
 ========================= */
 
 function transformDailyHtml(html: string) {
     let out = html;
 
-    // (1) 移除 RunLog
+    // (1) 移除 RunLog（抓取狀態之後全部砍掉）
     out = out.replace(/<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g, "");
 
-    // (2) 今日摘要瘦身
+    // (2) 今日摘要瘦身：只留事件數、最高熱度事件 + 高把握事件數（回填）
     out = out.replace(
         /<h2[^>]*>\s*今日摘要\s*<\/h2>[\s\S]*?(?=<h2|<h3)/g,
         (block) => {
@@ -331,14 +423,14 @@ function transformDailyHtml(html: string) {
         }
     );
 
-    // (3) 高信心 → 把握度
-    out = out.replace(/高信心\s*[:：]\s*(\d+)/g, (_all, n) => {
+    // (3) 高信心 → 把握度（高/中/低）
+    out = out.replace(/高信心\s*[:：]\s*(\d+)/g, (_, n) => {
         const c = Number(n);
         return `把握度：${confidenceLabel(Number.isFinite(c) ? c : undefined)}`;
     });
     out = out.replace(/高信心/g, "把握度");
 
-    // (3.5) 精簡「最高熱度事件」
+    // (3.5) 精簡「最高熱度事件」：只留 事件類型｜公司｜熱度
     out = out.replace(
         /<li[^>]*>\s*最高熱度事件\s*[:：]\s*([\s\S]*?)<\/li>/g,
         (_whole, inner) => {
@@ -358,31 +450,33 @@ function transformDailyHtml(html: string) {
         }
     );
 
-    // ====== 事件排行（EventRadarPlus）聚合成公司卡（雙格式：h3+ul / 純文字） ======
+    // ====== 事件排行（EventRadarPlus）聚合成公司卡 ======
+    // ✅ 超寬鬆：只要 h2 裡同時出現「事件排行」與「EventRadarPlus」就抓
     const sectionMatch = out.match(
-        /<h2[^>]*>\s*事件排行（EventRadarPlus）\s*<\/h2>[\s\S]*?(?=<h2|$)/
+        /<h2[^>]*>[\s\S]*?事件排行[\s\S]*?EventRadarPlus[\s\S]*?<\/h2>[\s\S]*?(?=<h2|$)/
     );
 
     if (sectionMatch) {
         const sectionHtml = sectionMatch[0];
-        const events: EventItem[] = [];
 
-        // ① 先嘗試：h3 + ul 格式
+        // 先試 h3 + ul
         const eventRegex = /<h3[^>]*>([\s\S]*?)<\/h3>\s*(<ul[\s\S]*?<\/ul>)/g;
+        const events: EventItem[] = [];
         let m: RegExpExecArray | null;
 
         while ((m = eventRegex.exec(sectionHtml)) !== null) {
             const titleRaw = stripTags(m[1]);
 
-            const rawUl = m[2]; // 原始 ul（用來抓公司）
+            const rawUl = m[2]; // 原始 ul（抓公司用）
             const rawCompany = extractCompany(rawUl);
 
+            // 卡片內 ul：移除主題、移除公司行、折疊來源
             let ulHtml = rawUl;
             ulHtml = removeTopicLi(ulHtml);
             ulHtml = removeCompanyLi(ulHtml);
             ulHtml = foldNewsInsideUl(ulHtml);
 
-            const heat = extractHeat(ulHtml);
+            const heat = extractHeat(rawUl); // 熱度從原始抓比較穩
 
             events.push({
                 title: titleRaw,
@@ -392,65 +486,12 @@ function transformDailyHtml(html: string) {
             });
         }
 
-        // ② 若抓不到：改用「純文字（br/p）」解析
+        // 如果抓不到（你目前狀況），就用純文字 parser
         if (events.length === 0) {
-            const textBlock = sectionHtml
-                .replace(/<br\s*\/?>/gi, "\n")
-                .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
-                .replace(/<\/div>\s*<div[^>]*>/gi, "\n");
-
-            const text = stripTags(textBlock).replace(/\u00a0/g, " ").replace(/\r/g, "").trim();
-
-            const lines = text
-                .split("\n")
-                .map((l) => l.trim())
-                .filter(Boolean);
-
-            const startIdx = lines.findIndex((l) => /事件排行（EventRadarPlus）/.test(l));
-            const bodyLines = startIdx >= 0 ? lines.slice(startIdx + 1) : lines;
-
-            const isStart = (l: string) => /^\d+\)\s*/.test(l);
-
-            const blocks: string[][] = [];
-            let cur: string[] = [];
-
-            for (const l of bodyLines) {
-                if (isStart(l)) {
-                    if (cur.length) blocks.push(cur);
-                    cur = [l];
-                } else {
-                    if (cur.length) cur.push(l);
-                }
-            }
-            if (cur.length) blocks.push(cur);
-
-            for (const block of blocks) {
-                const first = block[0] || "";
-                const titleRaw = first.replace(/^\d+\)\s*/, "").trim();
-
-                const joined = block.join("\n");
-
-                const mC = joined.match(/公司\s*[:：]\s*([^\n｜|]+)\s*/);
-                const company = mC ? mC[1].trim() : undefined;
-
-                const mH = joined.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
-                const heat = mH ? Number(mH[1]) : undefined;
-
-                // 每行 -> li
-                let ulHtml = `<ul>${block.map((l) => `<li>${l}</li>`).join("")}</ul>`;
-                ulHtml = removeTopicLi(ulHtml);
-                ulHtml = removeCompanyLi(ulHtml);
-
-                // 純文字版：把「代表新聞：」後面的行折疊
-                ulHtml = foldNewsInsideUl(
-                    ulHtml.replace(/<li>\s*代表新聞\s*[:：]?\s*<\/li>/g, "<li>代表新聞：</li>")
-                );
-
-                events.push({ title: titleRaw, ulHtml, company, heat });
-            }
+            const parsed = parseEventsFromPureText(sectionHtml);
+            events.push(...parsed);
         }
 
-        // 有抓到事件才重建（避免整段消失）
         if (events.length > 0) {
             const order: string[] = [];
             const byCompany = new Map<string, EventItem[]>();
@@ -511,7 +552,6 @@ function transformDailyHtml(html: string) {
     const heatSectionMatch = out.match(
         /<(h2|h3)[^>]*>\s*(?:公司熱度(?:排行)?（CompanyHeat[^）]*）|公司熱度(?:排行)?|CompanyHeat)\s*<\/\1>[\s\S]*?(?=<h2|<h3|$)/
     );
-
     if (heatSectionMatch) {
         const heatSectionHtml = heatSectionMatch[0];
         const rebuiltHeat = rebuildCompanyHeatSection(heatSectionHtml);
