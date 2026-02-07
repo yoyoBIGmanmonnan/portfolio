@@ -59,7 +59,7 @@ function removeCompanyLi(ulHtml: string) {
  * B) <li>代表新聞：</li> 後面連續很多 <li> 都是新聞來源
  */
 function foldNewsInsideUl(ulHtml: string) {
-    const lis = ulHtml.match(/<li[\s\S]*?<\/li>/g) || [];
+    const lis: string[] = ulHtml.match(/<li[\s\S]*?<\/li>/g) ?? [];
     if (!lis.length) return ulHtml;
 
     const idx = lis.findIndex((li) => /代表新聞\s*[:：]?/.test(li));
@@ -69,9 +69,10 @@ function foldNewsInsideUl(ulHtml: string) {
     const nested = lis[idx].match(
         /<li[^>]*>\s*代表新聞[:：]?\s*<ul([\s\S]*?)<\/ul>\s*<\/li>/
     );
+
     if (nested) {
-        const innerAttrsAndLis = nested[1]; // 注意：這裡是 "<li>..." 以及可能的屬性
-        const count = (innerAttrsAndLis.match(/<li[\s\S]*?<\/li>/g) || []).length;
+        const innerAttrsAndLis = nested[1]; // "<li>..." 以及可能的屬性
+        const count = (innerAttrsAndLis.match(/<li[\s\S]*?<\/li>/g) ?? []).length;
 
         const folded = `
 <li>
@@ -109,7 +110,7 @@ function foldNewsInsideUl(ulHtml: string) {
 ========================= */
 
 function extractCellTexts(trHtml: string) {
-    const cells = trHtml.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/g) || [];
+    const cells: string[] = trHtml.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/g) ?? [];
     return cells.map((c) => stripTags(c).replace(/\s+/g, " ").trim());
 }
 
@@ -121,6 +122,7 @@ function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
 
     const theadMatch = table.match(/<thead[\s\S]*?<\/thead>/);
     let headers: string[] = [];
+
     if (theadMatch) {
         const tr = theadMatch[0].match(/<tr[\s\S]*?<\/tr>/);
         if (tr) headers = extractCellTexts(tr[0]);
@@ -130,10 +132,13 @@ function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
     }
 
     const tbodyMatch = table.match(/<tbody[\s\S]*?<\/tbody>/);
-    const trList =
-        (tbodyMatch ? tbodyMatch[0] : table).match(/<tr[\s\S]*?<\/tr>/g) || [];
 
-    let dataTrs = trList;
+    // ✅ 這行就是你 Vercel 報錯的根因：match() 推成 RegExpMatchArray
+    // ✅ 改成明確 string[]，就不會有 string[] vs RegExpMatchArray 問題
+    const trList: string[] =
+        ((tbodyMatch ? tbodyMatch[0] : table).match(/<tr[\s\S]*?<\/tr>/g) ?? []);
+
+    let dataTrs: string[] = trList;
     if (!theadMatch && trList.length > 1) dataTrs = trList.slice(1);
 
     const idxCompany = headers.findIndex((h) => /公司|名稱|標的|個股/i.test(h));
@@ -220,7 +225,7 @@ function parseCompanyHeatFromPipe(sectionHtml: string): HeatRow[] | null {
 }
 
 function parseCompanyHeatFromList(sectionHtml: string): HeatRow[] | null {
-    const lis = sectionHtml.match(/<li[\s\S]*?<\/li>/g) || [];
+    const lis: string[] = sectionHtml.match(/<li[\s\S]*?<\/li>/g) ?? [];
     const rows: HeatRow[] = [];
 
     for (const li of lis) {
@@ -307,25 +312,11 @@ ${title}
 ========================= */
 
 function escapeHtml(s: string) {
-    return s
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
- * 你目前「純文字」長這樣：
- * 事件排行（EventRadarPlus）
- * 1) 規格+
- * 極性：正向
- * 主題：...
- * 公司：台積電
- * 熱度：65.05（Δ0）｜篇數：3｜高信心：1
- * 命中詞：...
- * 代表新聞：
- * xxxx ...
- *
- * 這邊我們用「1)」切塊，並抓公司/熱度
+ * 當 EventRadarPlus 被渲染成「純文字」時，用 1) 切塊解析出事件
  */
 function parseEventsFromPureText(sectionHtml: string): EventItem[] {
     const textBlock = sectionHtml
@@ -333,7 +324,11 @@ function parseEventsFromPureText(sectionHtml: string): EventItem[] {
         .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
         .replace(/<\/div>\s*<div[^>]*>/gi, "\n");
 
-    const text = stripTags(textBlock).replace(/\r/g, "").replace(/\u00a0/g, " ").trim();
+    const text = stripTags(textBlock)
+        .replace(/\r/g, "")
+        .replace(/\u00a0/g, " ")
+        .trim();
+
     const lines = text
         .split("\n")
         .map((l) => l.trim())
@@ -343,6 +338,7 @@ function parseEventsFromPureText(sectionHtml: string): EventItem[] {
 
     const blocks: string[][] = [];
     let cur: string[] = [];
+
     for (const l of lines) {
         if (isStart(l)) {
             if (cur.length) blocks.push(cur);
@@ -354,6 +350,7 @@ function parseEventsFromPureText(sectionHtml: string): EventItem[] {
     if (cur.length) blocks.push(cur);
 
     const events: EventItem[] = [];
+
     for (const b of blocks) {
         const first = b[0] || "";
         const titleRaw = first.replace(/^\d+\)\s*/, "").trim();
@@ -366,9 +363,13 @@ function parseEventsFromPureText(sectionHtml: string): EventItem[] {
         const heat = mH ? Number(mH[1]) : undefined;
 
         // 代表新聞折疊：找到 "代表新聞" 後面的行當來源
-        const idxNews = b.findIndex((l) => /^代表新聞\s*[:：]?\s*$/.test(l) || /^代表新聞\s*[:：]/.test(l));
+        const idxNews = b.findIndex(
+            (l) => /^代表新聞\s*[:：]?\s*$/.test(l) || /^代表新聞\s*[:：]/.test(l)
+        );
+
         let pre = b;
         let news: string[] = [];
+
         if (idxNews !== -1) {
             pre = b.slice(0, idxNews + 1);
             news = b.slice(idxNews + 1);
@@ -376,6 +377,7 @@ function parseEventsFromPureText(sectionHtml: string): EventItem[] {
 
         const liMain = pre.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
         const liNews = news.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+
         const folded =
             news.length > 0
                 ? `<li><details><summary style="cursor:pointer; opacity:0.8;">查看來源（${news.length}）</summary><ul>${liNews}</ul></details></li>`
@@ -403,7 +405,7 @@ function transformDailyHtml(html: string) {
     // (1) 移除 RunLog（抓取狀態之後全部砍掉）
     out = out.replace(/<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g, "");
 
-    // (2) 今日摘要瘦身：只留事件數、最高熱度事件 + 高把握事件數（回填）
+    // (2) 今日摘要瘦身
     out = out.replace(
         /<h2[^>]*>\s*今日摘要\s*<\/h2>[\s\S]*?(?=<h2|<h3)/g,
         (block) => {
@@ -411,7 +413,7 @@ function transformDailyHtml(html: string) {
             if (!m) return block;
 
             const ul = m[0];
-            const liAll = ul.match(/<li[\s\S]*?<\/li>/g) || [];
+            const liAll: string[] = ul.match(/<li[\s\S]*?<\/li>/g) ?? [];
 
             const keep = liAll.filter(
                 (li) => /事件數\s*[:：]/.test(li) || /最高熱度事件\s*[:：]/.test(li)
@@ -430,7 +432,7 @@ function transformDailyHtml(html: string) {
     });
     out = out.replace(/高信心/g, "把握度");
 
-    // (3.5) 精簡「最高熱度事件」：只留 事件類型｜公司｜熱度
+    // (3.5) 精簡「最高熱度事件」
     out = out.replace(
         /<li[^>]*>\s*最高熱度事件\s*[:：]\s*([\s\S]*?)<\/li>/g,
         (_whole, inner) => {
@@ -488,8 +490,7 @@ function transformDailyHtml(html: string) {
 
         // 如果抓不到（你目前狀況），就用純文字 parser
         if (events.length === 0) {
-            const parsed = parseEventsFromPureText(sectionHtml);
-            events.push(...parsed);
+            events.push(...parseEventsFromPureText(sectionHtml));
         }
 
         if (events.length > 0) {
@@ -552,6 +553,7 @@ function transformDailyHtml(html: string) {
     const heatSectionMatch = out.match(
         /<(h2|h3)[^>]*>\s*(?:公司熱度(?:排行)?（CompanyHeat[^）]*）|公司熱度(?:排行)?|CompanyHeat)\s*<\/\1>[\s\S]*?(?=<h2|<h3|$)/
     );
+
     if (heatSectionMatch) {
         const heatSectionHtml = heatSectionMatch[0];
         const rebuiltHeat = rebuildCompanyHeatSection(heatSectionHtml);
@@ -559,7 +561,7 @@ function transformDailyHtml(html: string) {
     }
 
     // (6) 回填「高把握事件數」
-    const highCount = (out.match(/把握度：高把握/g) || []).length;
+    const highCount = (out.match(/把握度：高把握/g) ?? []).length;
     out = out.replace(/__HIGH_CONF__/g, String(highCount));
 
     return out;
