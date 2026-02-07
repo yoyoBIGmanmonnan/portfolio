@@ -32,13 +32,13 @@ function stripTags(s: string) {
     return s.replace(/<[^>]+>/g, "").trim();
 }
 
+// ✅ 改：公司要從「原始 ul」抽，不要抽清理後的（你會把公司 li 刪掉）
 function extractCompany(ulHtml: string) {
     const m = ulHtml.match(/<li[^>]*>\s*公司\s*[:：]\s*([^<]+?)\s*<\/li>/);
     return m ? m[1].trim() : undefined;
 }
 
 function extractHeat(ulHtml: string) {
-    // 例如：熱度：386.56（Δ0）｜篇數：21｜把握度：高把握
     const m = ulHtml.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
     return m ? Number(m[1]) : undefined;
 }
@@ -107,20 +107,17 @@ function removeCompanyLi(ulHtml: string) {
    CompanyHeat helpers
 ========================= */
 
-// 把 <td>/<th> 內容抓成純文字
 function extractCellTexts(trHtml: string) {
     const cells = trHtml.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/g) || [];
     return cells.map((c) => stripTags(c).replace(/\s+/g, " ").trim());
 }
 
-// 從 table 解析 CompanyHeat
 function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
     const tableMatch = sectionHtml.match(/<table[\s\S]*?<\/table>/);
     if (!tableMatch) return null;
 
     const table = tableMatch[0];
 
-    // headers
     const theadMatch = table.match(/<thead[\s\S]*?<\/thead>/);
     let headers: string[] = [];
     if (theadMatch) {
@@ -131,16 +128,13 @@ function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
         if (firstTr) headers = extractCellTexts(firstTr[0]);
     }
 
-    // rows
     const tbodyMatch = table.match(/<tbody[\s\S]*?<\/tbody>/);
     const trList =
         (tbodyMatch ? tbodyMatch[0] : table).match(/<tr[\s\S]*?<\/tr>/g) || [];
 
-    // 若沒有 thead，用第一列當 header，資料從第二列開始
     let dataTrs = trList;
     if (!theadMatch && trList.length > 1) dataTrs = trList.slice(1);
 
-    // 找「公司」與「熱度」欄位 index（兼容不同命名）
     const idxCompany = headers.findIndex((h) => /公司|名稱|標的|個股/i.test(h));
     const idxHeat = headers.findIndex((h) => /熱度|heat/i.test(h));
 
@@ -164,7 +158,6 @@ function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
     return rows.length ? rows : null;
 }
 
-// ✅ 新增：解析「markdown pipe 表格」(你現在看到的 | 公司 | 熱度 |... 那串)
 function parseCompanyHeatFromPipe(sectionHtml: string): HeatRow[] | null {
     const withNewlines = sectionHtml
         .replace(/<br\s*\/?>/gi, "\n")
@@ -225,7 +218,6 @@ function parseCompanyHeatFromPipe(sectionHtml: string): HeatRow[] | null {
     return rows.length ? rows : null;
 }
 
-// 從 li 解析 CompanyHeat（如果不是 table）
 function parseCompanyHeatFromList(sectionHtml: string): HeatRow[] | null {
     const lis = sectionHtml.match(/<li[\s\S]*?<\/li>/g) || [];
     const rows: HeatRow[] = [];
@@ -257,10 +249,9 @@ function rebuildCompanyHeatSection(sectionHtml: string) {
 
     if (rows.length === 0) return null;
 
-    // 依熱度排序
     const sorted = [...rows].sort((a, b) => b.heat - a.heat);
 
-    const topN = 20; // 想要 Top10 改 10
+    const topN = 20;
     const shown = sorted.slice(0, topN);
     const maxHeat = Math.max(...shown.map((r) => r.heat), 1);
 
@@ -318,12 +309,9 @@ function transformDailyHtml(html: string) {
     let out = html;
 
     // (1) 移除 RunLog
-    out = out.replace(
-        /<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g,
-        ""
-    );
+    out = out.replace(/<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g, "");
 
-    // (2) 今日摘要瘦身（事件數 / 最高熱度事件 / 高把握事件數）
+    // (2) 今日摘要瘦身
     out = out.replace(
         /<h2[^>]*>\s*今日摘要\s*<\/h2>[\s\S]*?(?=<h2|<h3)/g,
         (block) => {
@@ -343,14 +331,14 @@ function transformDailyHtml(html: string) {
         }
     );
 
-    // (3) 高信心 → 把握度（高/中/低）
+    // (3) 高信心 → 把握度
     out = out.replace(/高信心\s*[:：]\s*(\d+)/g, (_, n) => {
         const c = Number(n);
         return `把握度：${confidenceLabel(Number.isFinite(c) ? c : undefined)}`;
     });
     out = out.replace(/高信心/g, "把握度");
 
-    // (3.5) 精簡「最高熱度事件」：只留 事件類型｜公司｜熱度
+    // (3.5) 精簡「最高熱度事件」
     out = out.replace(
         /<li[^>]*>\s*最高熱度事件\s*[:：]\s*([\s\S]*?)<\/li>/g,
         (_whole, inner) => {
@@ -378,19 +366,23 @@ function transformDailyHtml(html: string) {
     if (sectionMatch) {
         const sectionHtml = sectionMatch[0];
 
+        // ✅ 先把 section 內的 h3 + ul 抽出來，並把原本的「條列版事件」整段移除
         const eventRegex = /<h3[^>]*>([\s\S]*?)<\/h3>\s*(<ul[\s\S]*?<\/ul>)/g;
         const events: EventItem[] = [];
         let m: RegExpExecArray | null;
 
         while ((m = eventRegex.exec(sectionHtml)) !== null) {
             const titleRaw = stripTags(m[1]);
-            let ulHtml = m[2];
 
+            const rawUl = m[2]; // ✅ 原始 ul（用來抓公司）
+            const rawCompany = extractCompany(rawUl);
+
+            // ✅ 卡片內的 ul：移除主題、移除公司行、把代表新聞折疊
+            let ulHtml = rawUl;
             ulHtml = removeTopicLi(ulHtml);
             ulHtml = removeCompanyLi(ulHtml);
             ulHtml = foldNewsInsideUl(ulHtml);
 
-            const rawCompany = extractCompany(m[2]);
             const heat = extractHeat(ulHtml);
 
             events.push({
@@ -452,11 +444,11 @@ function transformDailyHtml(html: string) {
             }),
         ].join("");
 
+        // ✅ 用「公司卡 rebuilt」取代整段 section（純文字版會消失）
         out = out.replace(sectionHtml, rebuilt);
     }
 
     // ====== CompanyHeat 排版（Top 熱度排行） ======
-    // ✅ h2 或 h3 都抓、抓到下一個 h2/h3 或結尾
     const heatSectionMatch = out.match(
         /<(h2|h3)[^>]*>\s*(?:公司熱度(?:排行)?（CompanyHeat[^）]*）|公司熱度(?:排行)?|CompanyHeat)\s*<\/\1>[\s\S]*?(?=<h2|<h3|$)/
     );
@@ -502,6 +494,7 @@ export default async function DailyDetailPage({
             </h1>
             <div style={{ opacity: 0.7, marginTop: 6 }}>{meta.date}</div>
 
+            {/* ✅ 卡片版：只輸出清理後的 HTML（事件排行那段已被替換成公司卡） */}
             <article
                 style={{ marginTop: 20, lineHeight: 1.75 }}
                 dangerouslySetInnerHTML={{ __html: cleanedHtml }}
