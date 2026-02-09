@@ -1,7 +1,7 @@
 // lib/keywords/hits.ts
 import fs from "node:fs/promises";
 import path from "node:path";
-import { KEYWORD_CATS } from "@/app/methodology/keywords/page";
+import { KEYWORD_CATS } from "@/lib/keywords/catalog";
 
 export type KeywordHit = {
     keyword: string;

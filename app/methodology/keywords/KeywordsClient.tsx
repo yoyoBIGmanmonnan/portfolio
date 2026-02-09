@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
-import type { KeywordCat } from "./page";
+import type { KeywordCat } from "@/lib/keywords/catalog";
 import type { HitsIndex } from "@/lib/keywords/hits";
 import type { ChangelogItem } from "@/lib/keywords/changelog";
 
