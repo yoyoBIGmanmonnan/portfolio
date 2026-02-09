@@ -1,14 +1,14 @@
 // lib/keywords/hits.ts
 import fs from "node:fs/promises";
 import path from "node:path";
-import { KEYWORD_CATS } from "./catalog";
+import { KEYWORD_CATS } from "@/app/methodology/keywords/page";
 
 export type KeywordHit = {
     keyword: string;
     hitDays: number;
-    firstSeen?: string;     // YYYY-MM-DD
-    lastSeen?: string;      // YYYY-MM-DD
-    lastSeenSlug?: string;  // 例如 2026-02-09
+    firstSeen?: string; // YYYY-MM-DD
+    lastSeen?: string;  // YYYY-MM-DD
+    lastSeenSlug?: string;
 };
 
 export type HitsIndex = Record<string, KeywordHit>;
@@ -33,7 +33,7 @@ export async function buildKeywordHits(): Promise<HitsIndex> {
     const allKeywords = KEYWORD_CATS.flatMap((c) => c.items);
 
     const hits: HitsIndex = Object.fromEntries(
-        allKeywords.map((k) => [k, { keyword: k, hitDays: 0 } as KeywordHit])
+        allKeywords.map((k) => [k, { keyword: k, hitDays: 0 }])
     );
 
     for (const file of files) {

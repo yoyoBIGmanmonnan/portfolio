@@ -130,7 +130,7 @@ const KEYWORD_CATS: KeywordCat[] = [
 
 export default async function KeywordsPage() {
     // ✅ Server 端掃描 content/daily/*.md(x) 並算命中
-    const hits = await buildKeywordHits(KEYWORD_CATS);
+    const hits = await buildKeywordHits();
 
     return (
         <KeywordsClient
