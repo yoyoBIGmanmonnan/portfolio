@@ -1,5 +1,7 @@
+// app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "研究筆記",
@@ -16,24 +18,32 @@ export default function RootLayout({
       <body className="min-h-screen bg-white text-gray-900">
         {/* Global Header */}
         <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur">
-          <div className="mx-auto max-w-5xl px-6 py-3 flex items-center justify-between">
-            <a href="/" className="font-semibold tracking-tight">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
+            <Link href="/" className="font-semibold tracking-tight hover:text-gray-900">
               研究筆記
-            </a>
+            </Link>
 
             <nav className="flex items-center gap-4 text-sm text-gray-600">
-              <a className="hover:text-gray-900" href="/about">
-                About
-              </a>
-              <a className="hover:text-gray-900" href="/">
+              <Link href="/" className="hover:text-gray-900">
                 首頁
-              </a>
-              <a className="hover:text-gray-900" href="/notes">
-                Notes
-              </a>
-              <a className="hover:text-gray-900" href="/daily">
+              </Link>
+              <Link href="/daily" className="hover:text-gray-900">
                 事件雷達
-              </a>
+              </Link>
+              <Link href="/notes" className="hover:text-gray-900">
+                Notes
+              </Link>
+              <Link href="/about" className="hover:text-gray-900">
+                About
+              </Link>
+
+              {/* ✅ Keywords 放在 Header nav */}
+              <Link
+                href="/methodology/keywords"
+                className="font-medium text-gray-800 hover:text-gray-900"
+              >
+                Keywords
+              </Link>
             </nav>
           </div>
         </header>
@@ -48,6 +58,6 @@ export default function RootLayout({
           </div>
         </footer>
       </body>
-    </html >
+    </html>
   );
 }
