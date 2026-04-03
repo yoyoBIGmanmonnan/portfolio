@@ -1,4 +1,8 @@
+// app/daily/[slug]/page.tsx
 import { getDailyHtml, getDailySlugs } from "@/lib/daily";
+import { KEYWORD_CATS } from "@/lib/keywords/catalog";
+import fs from "fs/promises";
+import path from "path";
 
 export async function generateStaticParams() {
     return getDailySlugs().map((slug) => ({ slug }));
@@ -16,12 +20,22 @@ type EventItem = {
     ulHtml: string;
     company?: string;
     heat?: number;
+    hitWords?: string[];
 };
 
-type HeatRow = {
+type CompanyHeatRow = {
     company: string;
     heat: number;
-    cells: string[];
+    appearCount?: number | null;
+    confidenceCount?: number | null;
+    mainTheme?: string;
+    subTheme?: string;
+};
+
+type CompanyHeatJson = {
+    slug: string;
+    topN: number;
+    rows: CompanyHeatRow[];
 };
 
 /* =========================
@@ -37,9 +51,68 @@ function extractCompany(ulHtml: string) {
     return m ? m[1].trim() : undefined;
 }
 
-function extractHeatAny(s: string) {
-    const m = s.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
+function extractHeat(ulHtml: string) {
+    const m = ulHtml.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
     return m ? Number(m[1]) : undefined;
+}
+
+// 抓「命中詞」
+function extractHitWords(ulHtml: string): string[] {
+    const m = ulHtml.match(/<li[^>]*>\s*命中詞\s*[:：]\s*([\s\S]*?)<\/li>/);
+    if (!m) return [];
+    const raw = stripTags(m[0]).replace(/^命中詞\s*[:：]\s*/i, "").trim();
+    if (!raw) return [];
+    return raw
+        .split(/[，,、]+/g)
+        .map((s) => s.trim())
+        .filter(Boolean);
+}
+
+function foldNewsInsideUl(ulHtml: string) {
+    let body = ulHtml;
+    const lis = body.match(/<li[\s\S]*?<\/li>/g) || [];
+    if (lis.length === 0) return body;
+
+    const idx = lis.findIndex((li) => /代表新聞\s*[:：]?/.test(li));
+    if (idx === -1) return body;
+
+    // A) <li>代表新聞：<ul>...</ul></li>
+    const nested = lis[idx].match(
+        /<li[^>]*>\s*代表新聞[:：]?\s*<ul([\s\S]*?)<\/ul>\s*<\/li>/
+    );
+    if (nested) {
+        const inner = nested[1];
+        const count = (inner.match(/<li[\s\S]*?<\/li>/g) || []).length;
+
+        const folded = `
+      <li>
+        <details>
+          <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
+          <ul${inner}</ul>
+        </details>
+      </li>
+    `.replace(/\n\s+/g, "");
+
+        const newLis = [...lis];
+        newLis[idx] = folded;
+        return `<ul>${newLis.join("")}</ul>`;
+    }
+
+    // B) <li>代表新聞：</li> 後面連續很多 <li>
+    const kept = lis.slice(0, idx);
+    const newsLis = lis.slice(idx + 1);
+    const count = newsLis.length;
+
+    const folded = `
+    <li>
+      <details>
+        <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
+        <ul>${newsLis.join("")}</ul>
+      </details>
+    </li>
+  `.replace(/\n\s+/g, "");
+
+    return `<ul>${kept.join("")}${folded}</ul>`;
 }
 
 function removeTopicLi(ulHtml: string) {
@@ -50,214 +123,126 @@ function removeCompanyLi(ulHtml: string) {
     return ulHtml.replace(/<li[^>]*>\s*公司\s*[:：][\s\S]*?<\/li>/g, "");
 }
 
-/**
- * 把「代表新聞」折疊進 <details>
- * 支援：
- * A) <li>代表新聞：<ul>...</ul></li>
- * B) <li>代表新聞：</li> 後面連續很多 <li>
- */
-function foldNewsInsideUl(ulHtml: string) {
-    const lis: string[] = ulHtml.match(/<li[\s\S]*?<\/li>/g) ?? [];
-    if (!lis.length) return ulHtml;
+/* =========================
+   KEYWORD_CATS 反查：keyword -> catTitle
+========================= */
 
-    const idx = lis.findIndex((li) => /代表新聞\s*[:：]?/.test(li));
-    if (idx === -1) return ulHtml;
+function buildKeywordToCatTitleMap(): Map<string, string> {
+    const mp = new Map<string, string>();
+    for (const c of KEYWORD_CATS as any[]) {
+        const title = String(c.title ?? c.key ?? "");
+        const items: string[] = Array.isArray(c.items) ? c.items : [];
+        for (const kw of items) {
+            if (!kw) continue;
+            mp.set(String(kw).trim(), title);
+        }
+    }
+    return mp;
+}
 
-    const nested = lis[idx].match(
-        /<li[^>]*>\s*代表新聞[:：]?\s*<ul([\s\S]*?)<\/ul>\s*<\/li>/
-    );
+const KW_TO_CAT = buildKeywordToCatTitleMap();
 
-    // A
-    if (nested) {
-        const inner = nested[1]; // "<li>...</li>" + 可能帶屬性
-        const count = (inner.match(/<li[\s\S]*?<\/li>/g) ?? []).length;
+function mapHitWordsToCatTitles(words: string[]): string[] {
+    const out = new Set<string>();
 
-        const folded = `
-<li>
-  <details>
-    <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
-    <ul${inner}</ul>
-  </details>
-</li>
-`.replace(/\n\s+/g, "");
+    for (const w0 of words) {
+        const raw = String(w0).trim();
+        if (!raw) continue;
 
-        const newLis = [...lis];
-        newLis[idx] = folded;
-        return `<ul>${newLis.join("")}</ul>`;
+        const w = raw.replace(/^[\s\-–—]+|[\s\-–—]+$/g, "");
+
+        // ① 先嘗試 keyword -> 類別 title
+        const hit = KW_TO_CAT.get(w);
+        if (hit) {
+            out.add(hit);
+            continue;
+        }
+
+        // ② 對不到就直接當 badge 顯示（保底）
+        out.add(w);
     }
 
-    // B
-    const kept = lis.slice(0, idx);
-    const newsLis = lis.slice(idx + 1);
-    const count = newsLis.length;
+    return [...out];
+}
 
-    const folded = `
-<li>
-  <details>
-    <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
-    <ul>${newsLis.join("")}</ul>
-  </details>
-</li>
-`.replace(/\n\s+/g, "");
 
-    return `<ul>${kept.join("")}${folded}</ul>`;
+function renderBadges(titles: string[]) {
+    const shown = titles.slice(0, 5);
+    const more = titles.length - shown.length;
+
+    const badgeHtml = shown
+        .map(
+            (t) =>
+                `
+<span style="
+  display:inline-block;
+  padding:2px 8px;
+  border:1px solid rgba(0,0,0,0.10);
+  border-radius:999px;
+  font-size:12px;
+  line-height:18px;
+  opacity:0.85;
+  background:rgba(0,0,0,0.03);
+  margin-right:6px;
+  margin-top:6px;
+  white-space:nowrap;
+">${t}</span>
+`.replace(/\n\s+/g, "")
+        )
+        .join("");
+
+    const moreHtml =
+        more > 0
+            ? `
+<span style="
+  display:inline-block;
+  padding:2px 8px;
+  border:1px dashed rgba(0,0,0,0.18);
+  border-radius:999px;
+  font-size:12px;
+  line-height:18px;
+  opacity:0.7;
+  background:rgba(0,0,0,0.02);
+  margin-top:6px;
+  white-space:nowrap;
+">+${more}</span>
+`.replace(/\n\s+/g, "")
+            : "";
+
+    return `<div style="margin-top:6px; display:flex; flex-wrap:wrap;">${badgeHtml}${moreHtml}</div>`;
 }
 
 /* =========================
-   CompanyHeat (pretty) helpers
+   CompanyHeat JSON -> HTML
 ========================= */
 
-function extractCellTexts(trHtml: string): string[] {
-    const cells: string[] = trHtml.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/g) ?? [];
-    return cells.map((c) => stripTags(c).replace(/\s+/g, " ").trim());
-}
-
-function parseCompanyHeatFromTable(sectionHtml: string): HeatRow[] | null {
-    const table = sectionHtml.match(/<table[\s\S]*?<\/table>/)?.[0];
-    if (!table) return null;
-
-    const thead = table.match(/<thead[\s\S]*?<\/thead>/)?.[0] ?? null;
-    const tbody = table.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? null;
-
-    // headers
-    let headers: string[] = [];
-    if (thead) {
-        const tr = thead.match(/<tr[\s\S]*?<\/tr>/)?.[0];
-        if (tr) headers = extractCellTexts(tr);
-    } else {
-        const firstTr = table.match(/<tr[\s\S]*?<\/tr>/)?.[0];
-        if (firstTr) headers = extractCellTexts(firstTr);
+function renderCompanyHeatFromJson(data: CompanyHeatJson | null) {
+    if (!data || !data.rows?.length) {
+        return `
+<h2>公司熱度（CompanyHeat | Top 20）</h2>
+<div style="opacity:0.7; font-size:13px;">找不到 CompanyHeat JSON（public/data/companyheat/${data?.slug ?? "slug"}.json）或內容為空</div>
+`.replace(/\n\s+/g, "");
     }
 
-    // rows
-    const trList: string[] = (tbody ?? table).match(/<tr[\s\S]*?<\/tr>/g) ?? [];
-    if (!trList.length) return null;
-
-    // 若沒有 thead，用第一列當 header，資料從第二列開始
-    const dataTrs: string[] = !thead && trList.length > 1 ? trList.slice(1) : trList;
-
-    const idxCompany = headers.findIndex((h) => /公司|名稱|標的|個股/i.test(h));
-    const idxHeat = headers.findIndex((h) => /熱度|heat/i.test(h));
-    const cIdx = idxCompany >= 0 ? idxCompany : 0;
-    const hIdx = idxHeat >= 0 ? idxHeat : 1;
-
-    const rows: HeatRow[] = [];
-    for (const tr of dataTrs) {
-        const cells = extractCellTexts(tr);
-        if (!cells.length) continue;
-
-        const company = (cells[cIdx] || "").trim();
-        const heatNum = Number(String(cells[hIdx] || "").replace(/[^\d.]/g, ""));
-
-        if (!company) continue;
-        if (!Number.isFinite(heatNum)) continue;
-
-        rows.push({ company, heat: heatNum, cells });
-    }
-
-    return rows.length ? rows : null;
-}
-
-function parseCompanyHeatFromPipe(sectionHtml: string): HeatRow[] | null {
-    const withNewlines = sectionHtml
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
-        .replace(/<\/div>\s*<div[^>]*>/gi, "\n");
-
-    const text = stripTags(withNewlines)
-        .replace(/\u00a0/g, " ")
-        .replace(/\r/g, "")
-        .trim();
-
-    const lines = text
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-    const headerIdx = lines.findIndex(
-        (l) => l.includes("|") && /公司/.test(l) && /熱度/.test(l)
-    );
-    if (headerIdx === -1) return null;
-
-    const sepIdx = headerIdx + 1;
-    if (!lines[sepIdx] || !/---/.test(lines[sepIdx])) return null;
-
-    const headerCells = lines[headerIdx]
-        .split("|")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-    const idxCompany = headerCells.findIndex((h) => /公司|名稱|標的|個股/i.test(h));
-    const idxHeat = headerCells.findIndex((h) => /熱度|heat/i.test(h));
-    const cIdx = idxCompany >= 0 ? idxCompany : 0;
-    const hIdx = idxHeat >= 0 ? idxHeat : 1;
-
-    const rows: HeatRow[] = [];
-    for (let i = sepIdx + 1; i < lines.length; i++) {
-        const l = lines[i];
-        if (!l.includes("|")) break;
-
-        const cells = l
-            .split("|")
-            .map((s) => s.trim())
-            .filter(Boolean);
-
-        if (cells.length < 2) continue;
-
-        const company = (cells[cIdx] || "").trim();
-        const heatNum = Number(String(cells[hIdx] || "").replace(/[^\d.]/g, ""));
-
-        if (!company) continue;
-        if (!Number.isFinite(heatNum)) continue;
-
-        rows.push({ company, heat: heatNum, cells });
-    }
-
-    return rows.length ? rows : null;
-}
-
-function parseCompanyHeatFromList(sectionHtml: string): HeatRow[] | null {
-    const lis: string[] = sectionHtml.match(/<li[\s\S]*?<\/li>/g) ?? [];
-    const rows: HeatRow[] = [];
-
-    for (const li of lis) {
-        const text = stripTags(li).replace(/\s+/g, " ").trim();
-        const mC = text.match(/公司\s*[:：]\s*([^｜|]+?)(?:\s*[｜|]|$)/);
-        const mH = text.match(/熱度\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/);
-        if (!mC || !mH) continue;
-
-        const company = mC[1].trim();
-        const heat = Number(mH[1]);
-        if (!company || !Number.isFinite(heat)) continue;
-
-        rows.push({ company, heat, cells: [text] });
-    }
-
-    return rows.length ? rows : null;
-}
-
-function rebuildCompanyHeatSection(sectionHtml: string) {
-    const rows =
-        parseCompanyHeatFromTable(sectionHtml) ??
-        parseCompanyHeatFromPipe(sectionHtml) ??
-        parseCompanyHeatFromList(sectionHtml) ??
-        [];
-
-    if (!rows.length) return null;
-
-    const sorted = [...rows].sort((a, b) => b.heat - a.heat);
-    const topN = 20;
-    const shown = sorted.slice(0, topN);
-    const maxHeat = Math.max(...shown.map((r) => r.heat), 1);
-
-    const title =
-        sectionHtml.match(/<(h2|h3)[^>]*>[\s\S]*?<\/\1>/)?.[0] ??
-        `<h2>公司熱度（CompanyHeat）</h2>`;
+    const topN = data.topN ?? 20;
+    const shown = data.rows.slice(0, topN);
+    const maxHeat = Math.max(...shown.map((r) => r.heat || 0), 1);
 
     const rowHtml = shown
         .map((r, i) => {
             const pct = Math.max(2, Math.round((r.heat / maxHeat) * 100));
-            const detailText = r.cells.join(" ｜ ");
+            const t1 = (r.mainTheme || "").trim();
+            const t2 = (r.subTheme || "").trim();
+            const tags = [t1, t2].filter((x) => x && x !== "未分類");
+
+            const tagsHtml = tags.length
+                ? renderBadges(tags)
+                : "";
+
+            const metaBits = [
+                r.appearCount != null ? `出現 ${r.appearCount}` : null,
+                r.confidenceCount != null ? `高把握 ${r.confidenceCount}` : null,
+            ].filter(Boolean);
 
             return `
 <div style="display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-top:1px solid rgba(0,0,0,0.06);">
@@ -265,19 +250,19 @@ function rebuildCompanyHeatSection(sectionHtml: string) {
   <div style="flex:1; min-width:0;">
     <div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">
       <div style="font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${r.company}</div>
-      <div style="opacity:0.75; font-size:12px;">熱度 ${r.heat.toFixed(2)}</div>
+      <div style="opacity:0.75; font-size:12px;">熱度 ${Number(r.heat).toFixed(2)}</div>
     </div>
+
+    ${tagsHtml}
 
     <div style="margin-top:6px; height:8px; border-radius:999px; background:rgba(0,0,0,0.06); overflow:hidden;">
       <div style="height:100%; width:${pct}%; background:rgba(0,0,0,0.35); border-radius:999px;"></div>
     </div>
 
-    <details style="margin-top:6px;">
-      <summary style="cursor:pointer; opacity:0.75; font-size:12px;">查看細節</summary>
-      <div style="margin-top:6px; font-size:12px; opacity:0.85; line-height:1.6;">
-        ${detailText}
-      </div>
-    </details>
+    ${metaBits.length
+                    ? `<div style="margin-top:6px; font-size:12px; opacity:0.75;">${metaBits.join(" ｜ ")}</div>`
+                    : ""
+                }
   </div>
 </div>
 `.replace(/\n\s+/g, "");
@@ -285,11 +270,11 @@ function rebuildCompanyHeatSection(sectionHtml: string) {
         .join("");
 
     return `
-${title}
+<h2>公司熱度（CompanyHeat | Top ${topN}）</h2>
 <div style="margin-top:10px; padding:12px 14px; border:1px solid rgba(0,0,0,0.08); border-radius:14px;">
   <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
     <div style="font-weight:900;">Top ${topN} 熱度排行</div>
-    <div style="opacity:0.7; font-size:12px;">以熱度排序（可展開看細節）</div>
+    <div style="opacity:0.7; font-size:12px;">以熱度排序</div>
   </div>
   ${rowHtml}
 </div>
@@ -297,183 +282,198 @@ ${title}
 }
 
 /* =========================
-   EventRadarPlus pure-text fallback
-========================= */
-
-function escapeHtml(s: string) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function parseEventsFromPureText(sectionHtml: string): EventItem[] {
-    const text = stripTags(
-        sectionHtml
-            .replace(/<br\s*\/?>/gi, "\n")
-            .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
-            .replace(/<\/div>\s*<div[^>]*>/gi, "\n")
-    )
-        .replace(/\r/g, "")
-        .replace(/\u00a0/g, " ")
-        .trim();
-
-    const lines = text
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-    const isStart = (l: string) => /^\d+\)\s*/.test(l);
-
-    const blocks: string[][] = [];
-    let cur: string[] = [];
-    for (const l of lines) {
-        if (isStart(l)) {
-            if (cur.length) blocks.push(cur);
-            cur = [l];
-        } else if (cur.length) {
-            cur.push(l);
-        }
-    }
-    if (cur.length) blocks.push(cur);
-
-    return blocks.map((b) => {
-        const title = (b[0] || "").replace(/^\d+\)\s*/, "").trim();
-        const joined = b.join("\n");
-
-        const company =
-            joined.match(/公司\s*[:：]\s*([^\n｜|]+)/)?.[1]?.trim() || undefined;
-
-        const heat = extractHeatAny(joined);
-
-        const idxNews = b.findIndex(
-            (l) => /^代表新聞\s*[:：]?\s*$/.test(l) || /^代表新聞\s*[:：]/.test(l)
-        );
-        const pre = idxNews === -1 ? b : b.slice(0, idxNews + 1);
-        const news = idxNews === -1 ? [] : b.slice(idxNews + 1);
-
-        const liMain = pre.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
-        const liNews = news.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
-        const folded =
-            news.length > 0
-                ? `<li><details><summary style="cursor:pointer; opacity:0.8;">查看來源（${news.length}）</summary><ul>${liNews}</ul></details></li>`
-                : "";
-
-        let ulHtml = `<ul>${liMain}${folded}</ul>`;
-        ulHtml = removeTopicLi(ulHtml);
-        ulHtml = removeCompanyLi(ulHtml);
-
-        return { title, ulHtml, company, heat };
-    });
-}
-
-/* =========================
    Main transformer
 ========================= */
 
-function transformDailyHtml(html: string) {
+function transformDailyHtml(html: string, companyHeatHtml: string) {
     let out = html;
 
-    // 1) 移除 RunLog（抓取狀態之後全部砍）
+    // (1) 移除 RunLog
     out = out.replace(/<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g, "");
 
-    // 2) 高信心 → 把握度
+    // (2) 今日摘要瘦身（事件數 / 最高熱度事件 / 高把握事件數）
+    out = out.replace(
+        /<h2[^>]*>\s*今日摘要\s*<\/h2>[\s\S]*?(?=<h2|<h3)/g,
+        (block) => {
+            const m = block.match(/<ul[\s\S]*?<\/ul>/);
+            if (!m) return block;
+
+            const ul = m[0];
+            const liAll = ul.match(/<li[\s\S]*?<\/li>/g) || [];
+
+            const keep = liAll.filter(
+                (li) => /事件數\s*[:：]/.test(li) || /最高熱度事件\s*[:：]/.test(li)
+            );
+
+            const placeholder = `<li>高把握事件數：__HIGH_CONF__</li>`;
+            const newUl = `<ul>${keep.join("")}${placeholder}</ul>`;
+            return `<h2>今日摘要</h2>${newUl}`;
+        }
+    );
+
+    // (3) 高信心 → 把握度
     out = out.replace(/高信心\s*[:：]\s*(\d+)/g, (_, n) => {
         const c = Number(n);
         return `把握度：${confidenceLabel(Number.isFinite(c) ? c : undefined)}`;
     });
     out = out.replace(/高信心/g, "把握度");
 
-    // 3) EventRadarPlus：公司卡（先試 h3+ul；沒有就純文字 fallback）
-    const eventSectionMatch = out.match(
-        /<h2[^>]*>[\s\S]*?事件排行[\s\S]*?EventRadarPlus[\s\S]*?<\/h2>[\s\S]*?(?=<h2|$)/
+    // (3.5) 精簡最高熱度事件
+    out = out.replace(
+        /<li[^>]*>\s*最高熱度事件\s*[:：]\s*([\s\S]*?)<\/li>/g,
+        (_whole, inner) => {
+            const text = String(inner).replace(/\s+/g, " ").trim().replace(/｜/g, "|");
+            const parts = text
+                .split("|")
+                .map((s: string) => s.trim())
+                .filter(Boolean);
+
+            if (parts.length >= 3) {
+                const eventType = parts[0];
+                const company = parts[parts.length - 2];
+                const heatPart = parts[parts.length - 1];
+                return `<li>最高熱度事件：${eventType} ｜ ${company} ｜ ${heatPart}</li>`;
+            }
+            return `<li>最高熱度事件：${text}</li>`;
+        }
     );
 
-    if (eventSectionMatch) {
-        const sectionHtml = eventSectionMatch[0];
-        const events: EventItem[] = [];
+    // ====== 事件排行（EventRadarPlus）→ 公司卡 + 題材 badges ======
+    const sectionMatch = out.match(
+        /<h2[^>]*>\s*事件排行（EventRadarPlus）\s*<\/h2>[\s\S]*?(?=<h2|$)/
+    );
+
+    if (sectionMatch) {
+        const sectionHtml = sectionMatch[0];
 
         const eventRegex = /<h3[^>]*>([\s\S]*?)<\/h3>\s*(<ul[\s\S]*?<\/ul>)/g;
+        const events: EventItem[] = [];
         let m: RegExpExecArray | null;
+
         while ((m = eventRegex.exec(sectionHtml)) !== null) {
-            const title = stripTags(m[1]);
-            const rawUl = m[2];
+            const titleRaw = stripTags(m[1]);
+            let ulHtml = m[2];
 
-            const company = extractCompany(rawUl);
-            const heat = extractHeatAny(rawUl);
+            const rawCompany = extractCompany(m[2]);
+            const rawHitWords = extractHitWords(m[2]);
 
-            let ulHtml = rawUl;
             ulHtml = removeTopicLi(ulHtml);
             ulHtml = removeCompanyLi(ulHtml);
             ulHtml = foldNewsInsideUl(ulHtml);
 
-            events.push({ title, ulHtml, company, heat });
-        }
+            const heat = extractHeat(ulHtml);
 
-        if (events.length === 0) {
-            events.push(...parseEventsFromPureText(sectionHtml));
-        }
-
-        if (events.length > 0) {
-            const byCompany = new Map<string, EventItem[]>();
-            for (const e of events) {
-                const key = e.company || "（未辨識公司）";
-                if (!byCompany.has(key)) byCompany.set(key, []);
-                byCompany.get(key)!.push(e);
-            }
-
-            const companies = [...byCompany.keys()].sort((a, b) => {
-                const aMax = Math.max(...(byCompany.get(a) || []).map((x) => x.heat ?? 0));
-                const bMax = Math.max(...(byCompany.get(b) || []).map((x) => x.heat ?? 0));
-                return bMax - aMax;
+            events.push({
+                title: titleRaw,
+                ulHtml,
+                company: rawCompany,
+                heat,
+                hitWords: rawHitWords,
             });
-
-            const rebuilt = [
-                `<h2>事件排行（EventRadarPlus）</h2>`,
-                ...companies.map((company) => {
-                    const list = byCompany.get(company)!;
-                    const maxHeat = Math.max(...list.map((x) => x.heat ?? 0));
-                    const total = list.length;
-
-                    const itemsHtml = list
-                        .map((ev) => {
-                            const subTitle = ev.title.replace(/^\d+\)\s*/, "");
-                            return `
-<div style="margin-top:10px; padding-left:12px; border-left:3px solid rgba(0,0,0,0.08);">
-  <div style="font-weight:700; margin-bottom:4px;">${subTitle}</div>
-  ${ev.ulHtml}
-</div>
-`.replace(/\n\s+/g, "");
-                        })
-                        .join("");
-
-                    return `
-<div style="margin-top:16px; padding:12px 14px; border:1px solid rgba(0,0,0,0.08); border-radius:12px;">
-  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
-    <div style="font-size:18px; font-weight:800;">${company}</div>
-    <div style="opacity:0.75; font-size:13px;">
-      事件數 ${total} ・ 最高熱度 ${maxHeat.toFixed(2)}
-    </div>
-  </div>
-  ${itemsHtml}
-</div>
-`.replace(/\n\s+/g, "");
-                }),
-            ].join("");
-
-            out = out.replace(sectionHtml, rebuilt);
         }
+
+        const order: string[] = [];
+        const byCompany = new Map<string, EventItem[]>();
+        const companyCats = new Map<string, Set<string>>();
+
+        for (const e of events) {
+            const key = e.company || "（未辨識公司）";
+            if (!byCompany.has(key)) {
+                byCompany.set(key, []);
+                order.push(key);
+            }
+            byCompany.get(key)!.push(e);
+
+            const catTitles = mapHitWordsToCatTitles(e.hitWords || []);
+            if (!companyCats.has(key)) companyCats.set(key, new Set<string>());
+            for (const t of catTitles) companyCats.get(key)!.add(t);
+        }
+
+        const sortedCompanies = [...order].sort((a, b) => {
+            const aMax = Math.max(...(byCompany.get(a) || []).map((x) => x.heat ?? 0));
+            const bMax = Math.max(...(byCompany.get(b) || []).map((x) => x.heat ?? 0));
+            return bMax - aMax;
+        });
+
+        const rebuilt = [
+            `<h2>事件排行（EventRadarPlus）</h2>`,
+            ...sortedCompanies.map((company) => {
+                const list = byCompany.get(company)!;
+                const maxHeat = Math.max(...list.map((x) => x.heat ?? 0));
+                const totalEvents = list.length;
+
+                const cats = [...(companyCats.get(company) || new Set<string>())];
+                const catsFinal = cats.length ? cats : ["未分類"];
+                const badgesHtml = renderBadges(catsFinal);
+
+                const itemsHtml = list
+                    .map((ev) => {
+                        const subTitle = ev.title.replace(/^\d+\)\s*/, "");
+                        return `
+              <div style="margin-top:10px; padding-left:12px; border-left:3px solid rgba(0,0,0,0.08);">
+                <div style="font-weight:700; margin-bottom:4px;">${subTitle}</div>
+                ${ev.ulHtml}
+              </div>
+            `.replace(/\n\s+/g, "");
+                    })
+                    .join("");
+
+                return `
+          <div style="margin-top:16px; padding:12px 14px; border:1px solid rgba(0,0,0,0.08); border-radius:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+              <div style="min-width:0;">
+                <div style="font-size:18px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  ${company}
+                </div>
+                ${badgesHtml}
+              </div>
+              <div style="opacity:0.75; font-size:13px; white-space:nowrap;">
+                事件數 ${totalEvents} ・ 最高熱度 ${maxHeat.toFixed(2)}
+              </div>
+            </div>
+            ${itemsHtml}
+          </div>
+        `.replace(/\n\s+/g, "");
+            }),
+        ].join("");
+
+        out = out.replace(sectionHtml, rebuilt);
     }
 
-    // 4) CompanyHeat：漂亮版 Top 熱度排行
-    const heatSectionMatch = out.match(
-        /<(h2|h3)[^>]*>\s*(?:公司熱度(?:排行)?（CompanyHeat[^）]*）|公司熱度(?:排行)?|CompanyHeat)\s*<\/\1>[\s\S]*?(?=<h2|<h3|$)/
+    // ====== CompanyHeat：不 parse、直接整段移除（避免噴管線）=====
+    // 把「公司熱度（CompanyHeat...）」那段文字整段砍掉
+    out = out.replace(
+        /(?:<h2[^>]*>\s*)?公司熱度[\s\S]*?\(CompanyHeat[\s\S]*?\)[\s\S]*?(?=<h2|<\/article>|<footer|$)/g,
+        ""
     );
-    if (heatSectionMatch) {
-        const heatSectionHtml = heatSectionMatch[0];
-        const rebuiltHeat = rebuildCompanyHeatSection(heatSectionHtml);
-        if (rebuiltHeat) out = out.replace(heatSectionHtml, rebuiltHeat);
-    }
+
+    // 回填高把握事件數
+    const highCount = (out.match(/把握度：高把握/g) || []).length;
+    out = out.replace(/__HIGH_CONF__/g, String(highCount));
+
+    // 最後插入 JSON 渲染的 CompanyHeat
+    out = `${out}\n${companyHeatHtml}`;
 
     return out;
 }
+
+/* =========================
+   Server: read JSON
+========================= */
+
+async function readCompanyHeatJson(slug: string): Promise<CompanyHeatJson | null> {
+    try {
+        const p = path.join(process.cwd(), "public", "data", "companyheat", `${slug}.json`);
+        const s = await fs.readFile(p, "utf-8");
+        return JSON.parse(s) as CompanyHeatJson;
+    } catch {
+        return null;
+    }
+}
+
+/* =========================
+   Page
+========================= */
 
 export default async function DailyDetailPage({
     params,
@@ -491,7 +491,11 @@ export default async function DailyDetailPage({
     }
 
     const { meta, contentHtml } = await getDailyHtml(slug);
-    const cleanedHtml = transformDailyHtml(contentHtml);
+
+    const heatJson = await readCompanyHeatJson(slug);
+    const companyHeatHtml = renderCompanyHeatFromJson(heatJson);
+
+    const cleanedHtml = transformDailyHtml(contentHtml, companyHeatHtml);
 
     return (
         <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
@@ -509,23 +513,3 @@ export default async function DailyDetailPage({
         </main>
     );
 }
-
-import Link from "next/link";
-
-<div className="mt-10 rounded-2xl border bg-neutral-50 p-5">
-    <div className="flex items-center justify-between gap-4">
-        <div>
-            <h2 className="text-base font-semibold">🧠 雷達掃描範圍（Keywords）</h2>
-            <p className="mt-1 text-sm text-neutral-600">
-                本頁事件由 EventRadar 關鍵字系統掃描而得。完整關鍵字分類可公開檢視。
-            </p>
-        </div>
-
-        <Link
-            href="/methodology/keywords"
-            className="shrink-0 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-neutral-50"
-        >
-            查看完整關鍵字 →
-        </Link>
-    </div>
-</div>

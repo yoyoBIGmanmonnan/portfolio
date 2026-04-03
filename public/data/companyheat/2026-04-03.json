@@ -1,0 +1,166 @@
+{
+  "slug": "2026-04-03",
+  "topN": 20,
+  "rows": [
+    {
+      "company": "台積電",
+      "heat": 669.9,
+      "appearCount": 51,
+      "confidenceCount": 7,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "Silicon Photonics"
+    },
+    {
+      "company": "南亞",
+      "heat": 316.7,
+      "appearCount": 25,
+      "confidenceCount": 4,
+      "mainTheme": "記憶體",
+      "subTheme": "DRAM"
+    },
+    {
+      "company": "中油",
+      "heat": 305.9,
+      "appearCount": 31,
+      "confidenceCount": 0,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "面板價格"
+    },
+    {
+      "company": "台塑",
+      "heat": 305.0,
+      "appearCount": 29,
+      "confidenceCount": 1,
+      "mainTheme": "先進記憶體",
+      "subTheme": "Die Stacking"
+    },
+    {
+      "company": "友達",
+      "heat": 270.7,
+      "appearCount": 16,
+      "confidenceCount": 8,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "CPO"
+    },
+    {
+      "company": "南亞科",
+      "heat": 261.8,
+      "appearCount": 17,
+      "confidenceCount": 4,
+      "mainTheme": "記憶體",
+      "subTheme": "DRAM"
+    },
+    {
+      "company": "華通",
+      "heat": 245.4,
+      "appearCount": 13,
+      "confidenceCount": 4,
+      "mainTheme": "太空衛星",
+      "subTheme": "LEO"
+    },
+    {
+      "company": "聯合",
+      "heat": 218.8,
+      "appearCount": 23,
+      "confidenceCount": 0,
+      "mainTheme": "廠務工程",
+      "subTheme": "衛星發射"
+    },
+    {
+      "company": "台虹",
+      "heat": 210.7,
+      "appearCount": 17,
+      "confidenceCount": 3,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "Package Substrate"
+    },
+    {
+      "company": "華航",
+      "heat": 199.4,
+      "appearCount": 17,
+      "confidenceCount": 0,
+      "mainTheme": "先進製程封裝",
+      "subTheme": "SoIC"
+    },
+    {
+      "company": "創新服務",
+      "heat": 179.2,
+      "appearCount": 8,
+      "confidenceCount": 2,
+      "mainTheme": "半導體測試",
+      "subTheme": "Probe Card"
+    },
+    {
+      "company": "精測",
+      "heat": 173.4,
+      "appearCount": 10,
+      "confidenceCount": 2,
+      "mainTheme": "先進製程封裝",
+      "subTheme": "Secondary Gas"
+    },
+    {
+      "company": "群創",
+      "heat": 172.8,
+      "appearCount": 14,
+      "confidenceCount": 4,
+      "mainTheme": "面板",
+      "subTheme": "面板"
+    },
+    {
+      "company": "統一",
+      "heat": 168.8,
+      "appearCount": 15,
+      "confidenceCount": 1,
+      "mainTheme": "PMIC功率半導體",
+      "subTheme": "Power IC"
+    },
+    {
+      "company": "台灣大",
+      "heat": 166.9,
+      "appearCount": 12,
+      "confidenceCount": 2,
+      "mainTheme": "太空衛星",
+      "subTheme": "Starlink"
+    },
+    {
+      "company": "富采",
+      "heat": 159.4,
+      "appearCount": 8,
+      "confidenceCount": 3,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "CPO"
+    },
+    {
+      "company": "台塑化",
+      "heat": 154.7,
+      "appearCount": 11,
+      "confidenceCount": 1,
+      "mainTheme": "先進記憶體",
+      "subTheme": "Die Stacking"
+    },
+    {
+      "company": "聯亞",
+      "heat": 152.9,
+      "appearCount": 8,
+      "confidenceCount": 4,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "Silicon Photonics"
+    },
+    {
+      "company": "聯發科",
+      "heat": 150.9,
+      "appearCount": 7,
+      "confidenceCount": 4,
+      "mainTheme": "記憶體",
+      "subTheme": "記憶體"
+    },
+    {
+      "company": "鴻海",
+      "heat": 149.3,
+      "appearCount": 18,
+      "confidenceCount": 2,
+      "mainTheme": "高速互連光通訊",
+      "subTheme": "AI伺服器"
+    }
+  ]
+}

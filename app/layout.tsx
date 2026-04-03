@@ -54,7 +54,7 @@ export default function RootLayout({
         {/* Global Footer */}
         <footer className="border-t">
           <div className="mx-auto max-w-5xl px-6 py-6 text-sm text-gray-500">
-            © {new Date().getFullYear()} 你的名字 · Built with Next.js + Vercel
+            © {new Date().getFullYear()} 謝家綸 · Built with Next.js + Vercel
           </div>
         </footer>
       </body>

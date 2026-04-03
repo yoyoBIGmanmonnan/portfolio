@@ -118,7 +118,7 @@ export const KEYWORD_CATS: KeywordCat[] = [
         items: [
             "探針卡", "Probe Card", "probe card",
             "測試介面", "Test Interface", "ATE",
-            "晶圓測試", "Wafer Sort", "CP測試", "Final Test",
+            "晶圓測試", "Wafer Sort", "CP測試", "Final Test", "FT", "SLT",
             "測試治具", "Load Board", "Socket",
         ],
     },

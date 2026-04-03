@@ -67,7 +67,11 @@ def export_daily_markdown(excel_path: str, out_md_path: str | None = None, top_e
     df_heat = pd.read_excel(xls, "CompanyHeat")
     df_run = pd.read_excel(xls, "RunLog")
 
-    today = datetime.now(TZ_TW).strftime("%Y-%m-%d")
+    # 從 Excel 檔名推斷日期（台股三日深度監控報表_2026-04-03.xlsx → 2026-04-03）
+    import re as _re
+    _m = _re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(excel_path))
+    today = _m.group(1) if _m else datetime.now(TZ_TW).strftime("%Y-%m-%d")
+
     if out_md_path is None:
         out_md_path = os.path.join("content", "daily", f"{today}.md")
 

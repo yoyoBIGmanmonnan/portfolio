@@ -5,28 +5,27 @@ export default function DailyIndexPage() {
     const items = getDailyList();
 
     return (
-        <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 800 }}>Daily Radar</h1>
-            <p style={{ opacity: 0.7, marginTop: 8 }}>讀取 content/daily/*.md</p>
+        <main className="space-y-6">
+            <header className="space-y-2">
+                <h1 className="text-3xl font-bold tracking-tight">事件雷達</h1>
+                <p className="text-gray-600">每日台股事件雷達紀錄</p>
+            </header>
 
-            <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            <div className="grid gap-3">
                 {items.map((it) => (
                     <Link
                         key={it.slug}
                         href={`/daily/${it.slug}`}
-                        style={{
-                            display: "block",
-                            padding: 16,
-                            border: "1px solid #ddd",
-                            borderRadius: 12,
-                            textDecoration: "none",
-                        }}
+                        className="block rounded-xl border p-5 hover:shadow-sm"
                     >
-                        <div style={{ fontWeight: 700 }}>{it.title}</div>
-                        <div style={{ opacity: 0.7, marginTop: 6 }}>{it.date}</div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:justify-between">
+                            <div className="text-lg font-semibold">{it.title}</div>
+                            <div className="text-sm text-gray-500">{it.date}</div>
+                        </div>
                     </Link>
                 ))}
             </div>
         </main>
     );
 }
+
