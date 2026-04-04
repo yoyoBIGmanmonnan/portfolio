@@ -1,0 +1,166 @@
+{
+  "slug": "2026-04-04",
+  "topN": 20,
+  "rows": [
+    {
+      "company": "中油",
+      "heat": 499.3,
+      "appearCount": 31,
+      "confidenceCount": 5,
+      "mainTheme": "經營財務",
+      "subTheme": "食品加工與民生消費"
+    },
+    {
+      "company": "台積電",
+      "heat": 316.4,
+      "appearCount": 26,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "鮮食與食品代工"
+    },
+    {
+      "company": "南亞",
+      "heat": 303.8,
+      "appearCount": 18,
+      "confidenceCount": 3,
+      "mainTheme": "經營財務",
+      "subTheme": "籌資／上櫃／興櫃"
+    },
+    {
+      "company": "凱基金",
+      "heat": 285.0,
+      "appearCount": 13,
+      "confidenceCount": 6,
+      "mainTheme": "經營財務",
+      "subTheme": "金融/保險/財富管理"
+    },
+    {
+      "company": "南亞科",
+      "heat": 188.0,
+      "appearCount": 12,
+      "confidenceCount": 3,
+      "mainTheme": "經營財務",
+      "subTheme": "籌資／上櫃／興櫃"
+    },
+    {
+      "company": "仲琦",
+      "heat": 187.4,
+      "appearCount": 9,
+      "confidenceCount": 4,
+      "mainTheme": "經營財務",
+      "subTheme": "產能擴張與布局"
+    },
+    {
+      "company": "鴻海",
+      "heat": 179.0,
+      "appearCount": 10,
+      "confidenceCount": 3,
+      "mainTheme": "經營財務",
+      "subTheme": "財務體質與重整"
+    },
+    {
+      "company": "美時",
+      "heat": 168.4,
+      "appearCount": 10,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "毛利率/獲利結構/產品組合"
+    },
+    {
+      "company": "台虹",
+      "heat": 166.4,
+      "appearCount": 12,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "產能擴張與布局"
+    },
+    {
+      "company": "世界",
+      "heat": 162.8,
+      "appearCount": 12,
+      "confidenceCount": 1,
+      "mainTheme": "經營財務",
+      "subTheme": "產能擴張與布局"
+    },
+    {
+      "company": "創新服務",
+      "heat": 151.4,
+      "appearCount": 7,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "籌資／上櫃／興櫃"
+    },
+    {
+      "company": "台塑",
+      "heat": 148.2,
+      "appearCount": 8,
+      "confidenceCount": 1,
+      "mainTheme": "經營財務",
+      "subTheme": "毛利率/獲利結構/產品組合"
+    },
+    {
+      "company": "天鈺",
+      "heat": 142.8,
+      "appearCount": 11,
+      "confidenceCount": 1,
+      "mainTheme": "經營財務",
+      "subTheme": "籌資／上櫃／興櫃"
+    },
+    {
+      "company": "聯合",
+      "heat": 135.6,
+      "appearCount": 16,
+      "confidenceCount": 0,
+      "mainTheme": "經營財務",
+      "subTheme": "餐飲/展店/零售通路"
+    },
+    {
+      "company": "日勝生",
+      "heat": 135.4,
+      "appearCount": 7,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "轉投資/控股/集團資源"
+    },
+    {
+      "company": "大成",
+      "heat": 133.2,
+      "appearCount": 6,
+      "confidenceCount": 3,
+      "mainTheme": "內需消費與觀光餐飲",
+      "subTheme": "鮮食與食品代工"
+    },
+    {
+      "company": "統一",
+      "heat": 132.8,
+      "appearCount": 14,
+      "confidenceCount": 0,
+      "mainTheme": "內需消費與觀光餐飲",
+      "subTheme": "餐飲/展店/零售通路"
+    },
+    {
+      "company": "富采",
+      "heat": 128.2,
+      "appearCount": 7,
+      "confidenceCount": 2,
+      "mainTheme": "經營財務",
+      "subTheme": "毛利率/獲利結構/產品組合"
+    },
+    {
+      "company": "國產",
+      "heat": 126.2,
+      "appearCount": 8,
+      "confidenceCount": 1,
+      "mainTheme": "經營財務",
+      "subTheme": "電腦及週邊設備"
+    },
+    {
+      "company": "聯發科",
+      "heat": 124.2,
+      "appearCount": 8,
+      "confidenceCount": 1,
+      "mainTheme": "經營財務",
+      "subTheme": "毛利率/獲利結構/產品組合"
+    }
+  ]
+}

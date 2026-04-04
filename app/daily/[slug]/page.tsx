@@ -69,50 +69,39 @@ function extractHitWords(ulHtml: string): string[] {
 }
 
 function foldNewsInsideUl(ulHtml: string) {
-    let body = ulHtml;
-    const lis = body.match(/<li[\s\S]*?<\/li>/g) || [];
-    if (lis.length === 0) return body;
-
-    const idx = lis.findIndex((li) => /代表新聞\s*[:：]?/.test(li));
-    if (idx === -1) return body;
-
-    // A) <li>代表新聞：<ul>...</ul></li>
-    const nested = lis[idx].match(
-        /<li[^>]*>\s*代表新聞[:：]?\s*<ul([\s\S]*?)<\/ul>\s*<\/li>/
-    );
-    if (nested) {
-        const inner = nested[1];
-        const count = (inner.match(/<li[\s\S]*?<\/li>/g) || []).length;
-
-        const folded = `
-      <li>
-        <details>
-          <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
-          <ul${inner}</ul>
-        </details>
-      </li>
-    `.replace(/\n\s+/g, "");
-
-        const newLis = [...lis];
-        newLis[idx] = folded;
-        return `<ul>${newLis.join("")}</ul>`;
+    const rawMatches = ulHtml.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*[（(]([^｜|]*?)[｜|]([^）)]*?)[）)]/g);
+    if (!rawMatches || rawMatches.length === 0) return "";
+    
+    const uniqueNews = [];
+    const seen = new Set<string>();
+    
+    for (const item of rawMatches) {
+        // extract title and source to deduplicate
+        const aMatch = item.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+        const title = aMatch ? stripTags(aMatch[2]).trim() : "";
+        
+        const srcMatch = item.match(/[（(]([^｜|]*?)[｜|]/);
+        const source = srcMatch ? srcMatch[1].trim() : "";
+        
+        const key = title + "::" + source;
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniqueNews.push(item);
+        }
     }
+    
+    if (uniqueNews.length === 0) return "";
+    
+    const styledNews = uniqueNews.map(item => {
+        return `<div style="font-size:13px; margin-bottom:5px; margin-left:2px; display:flex; align-items:flex-start;">
+          <span style="opacity:0.4; margin-right:6px; margin-top:2px;">▸</span>
+          <span style="flex:1; min-width:0; line-height:1.4;">
+            <span style="display:block; word-break:break-word;">${item}</span>
+          </span>
+        </div>`;
+    }).join("");
 
-    // B) <li>代表新聞：</li> 後面連續很多 <li>
-    const kept = lis.slice(0, idx);
-    const newsLis = lis.slice(idx + 1);
-    const count = newsLis.length;
-
-    const folded = `
-    <li>
-      <details>
-        <summary style="cursor:pointer; opacity:0.8;">查看來源（${count}）</summary>
-        <ul>${newsLis.join("")}</ul>
-      </details>
-    </li>
-  `.replace(/\n\s+/g, "");
-
-    return `<ul>${kept.join("")}${folded}</ul>`;
+    return `<div style="margin-top:8px;">${styledNews}</div>`;
 }
 
 function removeTopicLi(ulHtml: string) {
@@ -176,13 +165,15 @@ function renderBadges(titles: string[]) {
                 `
 <span style="
   display:inline-block;
-  padding:2px 8px;
-  border:1px solid rgba(0,0,0,0.10);
-  border-radius:999px;
-  font-size:12px;
+  padding:2px 10px;
+  border:1px solid rgba(59, 130, 246, 0.5);
+  border-radius:6px;
+  font-size:11px;
+  font-weight:700;
   line-height:18px;
-  opacity:0.85;
-  background:rgba(0,0,0,0.03);
+  color:#93C5FD;
+  background:rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
   margin-right:6px;
   margin-top:6px;
   white-space:nowrap;
@@ -197,12 +188,12 @@ function renderBadges(titles: string[]) {
 <span style="
   display:inline-block;
   padding:2px 8px;
-  border:1px dashed rgba(0,0,0,0.18);
+  border:1px dashed rgba(255,255,255,0.3);
+  color:#cbd5e1;
   border-radius:999px;
   font-size:12px;
   line-height:18px;
-  opacity:0.7;
-  background:rgba(0,0,0,0.02);
+  background:rgba(255,255,255,0.05);
   margin-top:6px;
   white-space:nowrap;
 ">+${more}</span>
@@ -245,22 +236,22 @@ function renderCompanyHeatFromJson(data: CompanyHeatJson | null) {
             ].filter(Boolean);
 
             return `
-<div style="display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-top:1px solid rgba(0,0,0,0.06);">
-  <div style="width:28px; opacity:0.55; font-size:12px; text-align:right; padding-top:2px;">${i + 1}</div>
+<div style="display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-top:1px solid rgba(255,255,255,0.06);">
+  <div style="width:28px; color:#64748B; font-size:12px; text-align:right; padding-top:2px; font-weight:700;">${i + 1}</div>
   <div style="flex:1; min-width:0;">
     <div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">
-      <div style="font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${r.company}</div>
-      <div style="opacity:0.75; font-size:12px;">熱度 ${Number(r.heat).toFixed(2)}</div>
+      <div style="font-weight:900; color:#F8FAFC; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:16px;">${r.company}</div>
+      <div style="color:#60A5FA; font-weight:700; font-size:12px;">熱度 ${Number(r.heat).toFixed(2)}</div>
     </div>
 
     ${tagsHtml}
 
-    <div style="margin-top:6px; height:8px; border-radius:999px; background:rgba(0,0,0,0.06); overflow:hidden;">
-      <div style="height:100%; width:${pct}%; background:rgba(0,0,0,0.35); border-radius:999px;"></div>
+    <div style="margin-top:8px; height:6px; border-radius:999px; background:rgba(255,255,255,0.05); overflow:hidden;">
+      <div style="height:100%; width:${pct}%; background:linear-gradient(90deg, #3B82F6, #8B5CF6); box-shadow:0 0 10px rgba(139,92,246,0.4); border-radius:999px;"></div>
     </div>
 
     ${metaBits.length
-                    ? `<div style="margin-top:6px; font-size:12px; opacity:0.75;">${metaBits.join(" ｜ ")}</div>`
+                    ? `<div style="margin-top:6px; font-size:12px; color:#94a3b8;">${metaBits.join(" <span style='opacity:0.5'>｜</span> ")}</div>`
                     : ""
                 }
   </div>
@@ -270,11 +261,10 @@ function renderCompanyHeatFromJson(data: CompanyHeatJson | null) {
         .join("");
 
     return `
-<h2>公司熱度（CompanyHeat | Top ${topN}）</h2>
-<div style="margin-top:10px; padding:12px 14px; border:1px solid rgba(0,0,0,0.08); border-radius:14px;">
-  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
-    <div style="font-weight:900;">Top ${topN} 熱度排行</div>
-    <div style="opacity:0.7; font-size:12px;">以熱度排序</div>
+<div style="margin-top:16px; padding:20px; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:#111827; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:12px;">
+    <div style="font-weight:900; color:#F8FAFC; font-size:18px;">🔥 Top ${topN} 焦點金流</div>
+    <div style="color:#64748B; font-size:12px;">以熱度排序</div>
   </div>
   ${rowHtml}
 </div>
@@ -291,24 +281,10 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
     // (1) 移除 RunLog
     out = out.replace(/<h2[^>]*>\s*抓取狀態（RunLog[\s\S]*?<\/h2>[\s\S]*$/g, "");
 
-    // (2) 今日摘要瘦身（事件數 / 最高熱度事件 / 高把握事件數）
+    // (2) 今日摘要整段移除
     out = out.replace(
         /<h2[^>]*>\s*今日摘要\s*<\/h2>[\s\S]*?(?=<h2|<h3)/g,
-        (block) => {
-            const m = block.match(/<ul[\s\S]*?<\/ul>/);
-            if (!m) return block;
-
-            const ul = m[0];
-            const liAll = ul.match(/<li[\s\S]*?<\/li>/g) || [];
-
-            const keep = liAll.filter(
-                (li) => /事件數\s*[:：]/.test(li) || /最高熱度事件\s*[:：]/.test(li)
-            );
-
-            const placeholder = `<li>高把握事件數：__HIGH_CONF__</li>`;
-            const newUl = `<ul>${keep.join("")}${placeholder}</ul>`;
-            return `<h2>今日摘要</h2>${newUl}`;
-        }
+        ""
     );
 
     // (3) 高信心 → 把握度
@@ -317,26 +293,6 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
         return `把握度：${confidenceLabel(Number.isFinite(c) ? c : undefined)}`;
     });
     out = out.replace(/高信心/g, "把握度");
-
-    // (3.5) 精簡最高熱度事件
-    out = out.replace(
-        /<li[^>]*>\s*最高熱度事件\s*[:：]\s*([\s\S]*?)<\/li>/g,
-        (_whole, inner) => {
-            const text = String(inner).replace(/\s+/g, " ").trim().replace(/｜/g, "|");
-            const parts = text
-                .split("|")
-                .map((s: string) => s.trim())
-                .filter(Boolean);
-
-            if (parts.length >= 3) {
-                const eventType = parts[0];
-                const company = parts[parts.length - 2];
-                const heatPart = parts[parts.length - 1];
-                return `<li>最高熱度事件：${eventType} ｜ ${company} ｜ ${heatPart}</li>`;
-            }
-            return `<li>最高熱度事件：${text}</li>`;
-        }
-    );
 
     // ====== 事件排行（EventRadarPlus）→ 公司卡 + 題材 badges ======
     const sectionMatch = out.match(
@@ -359,6 +315,10 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
 
             ulHtml = removeTopicLi(ulHtml);
             ulHtml = removeCompanyLi(ulHtml);
+            // 移除極性、熱度、命中詞（命中詞已轉為 badges）
+            ulHtml = ulHtml.replace(/<li[^>]*>\s*極性\s*[:：][\s\S]*?<\/li>/g, "");
+            ulHtml = ulHtml.replace(/<li[^>]*>\s*熱度\s*[:：][\s\S]*?<\/li>/g, "");
+            ulHtml = ulHtml.replace(/<li[^>]*>\s*命中詞\s*[:：][\s\S]*?<\/li>/g, "");
             ulHtml = foldNewsInsideUl(ulHtml);
 
             const heat = extractHeat(ulHtml);
@@ -410,8 +370,8 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
                     .map((ev) => {
                         const subTitle = ev.title.replace(/^\d+\)\s*/, "");
                         return `
-              <div style="margin-top:10px; padding-left:12px; border-left:3px solid rgba(0,0,0,0.08);">
-                <div style="font-weight:700; margin-bottom:4px;">${subTitle}</div>
+              <div style="margin-top:16px; padding:12px 16px; border-left:2px solid #3B82F6; background:rgba(59,130,246,0.03); border-radius:4px;">
+                <div style="font-weight:800; color:#F8FAFC; font-size:15px; margin-bottom:6px;">${subTitle}</div>
                 ${ev.ulHtml}
               </div>
             `.replace(/\n\s+/g, "");
@@ -419,19 +379,22 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
                     .join("");
 
                 return `
-          <div style="margin-top:16px; padding:12px 14px; border:1px solid rgba(0,0,0,0.08); border-radius:12px;">
+          <div style="margin-top:20px; padding:20px; border:1px solid rgba(99,102,241,0.3); border-radius:16px; background:#111827; box-shadow:0 0 20px rgba(99,102,241,0.05), inset 0 0 20px rgba(99,102,241,0.02);">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
               <div style="min-width:0;">
-                <div style="font-size:18px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <div style="font-size:20px; font-weight:900; color:#F8FAFC; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   ${company}
                 </div>
                 ${badgesHtml}
               </div>
-              <div style="opacity:0.75; font-size:13px; white-space:nowrap;">
-                事件數 ${totalEvents} ・ 最高熱度 ${maxHeat.toFixed(2)}
+              <div style="color:#64748B; font-size:13px; white-space:nowrap; text-align:right;">
+                <div>事件數 <span style="color:#F8FAFC; font-weight:700;">${totalEvents}</span></div>
+                <div style="margin-top:2px;">最高熱度 <span style="color:#60A5FA; font-weight:700;">${maxHeat.toFixed(2)}</span></div>
               </div>
             </div>
-            ${itemsHtml}
+            <div style="margin-top:8px;">
+              ${itemsHtml}
+            </div>
           </div>
         `.replace(/\n\s+/g, "");
             }),
@@ -443,7 +406,7 @@ function transformDailyHtml(html: string, companyHeatHtml: string) {
     // ====== CompanyHeat：不 parse、直接整段移除（避免噴管線）=====
     // 把「公司熱度（CompanyHeat...）」那段文字整段砍掉
     out = out.replace(
-        /(?:<h2[^>]*>\s*)?公司熱度[\s\S]*?\(CompanyHeat[\s\S]*?\)[\s\S]*?(?=<h2|<\/article>|<footer|$)/g,
+        /(?:<h2[^>]*>\s*)?公司熱度[\s\S]*?[（\(]CompanyHeat[\s\S]*?[）\)][\s\S]*?(?=<h2|<\/article>|<footer|$)/g,
         ""
     );
 
